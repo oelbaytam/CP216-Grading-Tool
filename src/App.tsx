@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import JSZip from "jszip";
 import {
   Code,
@@ -12,38 +12,30 @@ import {
   Hash,
   Terminal,
   Save,
-  Trash2,
+  Trash2
 } from "lucide-react";
 import { parseStudentInfo } from "./utils/parsers";
 import { StudentSubmission } from "./types";
 import { FileTree } from "./components/FileTree";
-import {
-  saveSubmissionsToStorage,
-  loadSubmissionsFromStorage,
-  saveReferencesToStorage,
+import { 
+  saveSubmissionsToStorage, 
+  loadSubmissionsFromStorage, 
+  saveReferencesToStorage, 
   loadReferencesFromStorage,
   saveViewState,
   loadViewState,
-  clearAllStorage,
+  clearAllStorage
 } from "./utils/storage";
 
 const App: React.FC = () => {
-  const [submissions, setSubmissions] = useState<
-    Record<string, StudentSubmission>
-  >({});
-  const [referenceFiles, setReferenceFiles] = useState<Record<string, string>>(
-    {},
-  );
-
+  const [submissions, setSubmissions] = useState<Record<string, StudentSubmission>>({});
+  const [referenceFiles, setReferenceFiles] = useState<Record<string, string>>({});
+  
   // Selection State
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedSubmissionFilePath, setSelectedSubmissionFilePath] = useState<
-    string | null
-  >(null);
-  const [selectedReferenceFilePath, setSelectedReferenceFilePath] = useState<
-    string | null
-  >(null);
-
+  const [selectedSubmissionFilePath, setSelectedSubmissionFilePath] = useState<string | null>(null);
+  const [selectedReferenceFilePath, setSelectedReferenceFilePath] = useState<string | null>(null);
+  
   // UI State
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true); // Start true to load storage
@@ -58,19 +50,15 @@ const App: React.FC = () => {
         const [savedSubs, savedRefs, savedView] = await Promise.all([
           loadSubmissionsFromStorage(),
           loadReferencesFromStorage(),
-          loadViewState(),
+          loadViewState()
         ]);
 
         if (savedSubs) setSubmissions(savedSubs);
         if (savedRefs) setReferenceFiles(savedRefs);
-
+        
         if (savedView) {
           // Only restore ID if it actually exists in the loaded submissions
-          if (
-            savedView.selectedId &&
-            savedSubs &&
-            savedSubs[savedView.selectedId]
-          ) {
+          if (savedView.selectedId && savedSubs && savedSubs[savedView.selectedId]) {
             setSelectedId(savedView.selectedId);
             setSelectedSubmissionFilePath(savedView.selectedSubmissionFile);
             setSelectedReferenceFilePath(savedView.selectedReferenceFile);
@@ -88,28 +76,18 @@ const App: React.FC = () => {
   }, []);
 
   // 2. AUTO-SAVE: View State
-  // Debounce this slightly or just save on change. Since it's async IDB, it's non-blocking.
   useEffect(() => {
     if (!isLoading) {
       saveViewState({
         selectedId,
         selectedSubmissionFile: selectedSubmissionFilePath,
-        selectedReferenceFile: selectedReferenceFilePath,
+        selectedReferenceFile: selectedReferenceFilePath
       });
     }
-  }, [
-    selectedId,
-    selectedSubmissionFilePath,
-    selectedReferenceFilePath,
-    isLoading,
-  ]);
+  }, [selectedId, selectedSubmissionFilePath, selectedReferenceFilePath, isLoading]);
 
   const handleClearStorage = async () => {
-    if (
-      window.confirm(
-        "Are you sure? This will delete all saved files and submissions.",
-      )
-    ) {
+    if (window.confirm("Are you sure? This will delete all saved files and submissions.")) {
       setIsLoading(true);
       await clearAllStorage();
       setSubmissions({});
@@ -119,10 +97,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    type: "zip" | "ref",
-  ) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: "zip" | "ref") => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -138,87 +113,61 @@ const App: React.FC = () => {
           const content = await file.text();
           newRefs[file.name] = content;
         }
-
+        
         // OVERWRITE STATE & STORAGE
         setReferenceFiles(newRefs);
         await saveReferencesToStorage(newRefs);
         setStatusMsg("References saved.");
+
       } else if (type === "zip") {
         setStatusMsg("Unzipping submissions...");
         const zip = new JSZip();
         const mainZip = await zip.loadAsync(files[0]);
         const submissionMap: Record<string, StudentSubmission> = {}; // Start fresh (Overwrite)
 
-        const filePromises = Object.keys(mainZip.files).map(
-          async (filename) => {
-            if (filename.toLowerCase().endsWith(".zip")) {
-              const { id, name, code } = parseStudentInfo(filename);
+        const filePromises = Object.keys(mainZip.files).map(async (filename) => {
+          if (filename.toLowerCase().endsWith(".zip")) {
+            
+            const { id, name, code } = parseStudentInfo(filename);
+            
+            const studentId = id || `unknown-${Math.random().toString(36).substr(2, 5)}`;
+            const studentName = name || "Unknown Student";
+            const studentCode = code || "N/A";
 
-              const studentId =
-                id || `unknown-${Math.random().toString(36).substr(2, 5)}`;
-              const studentName = name || "Unknown Student";
-              const studentCode = code || "N/A";
+            try {
+              const zipContent = await mainZip.files[filename].async("blob");
+              const innerZip = new JSZip();
+              const studentZip = await innerZip.loadAsync(zipContent);
+              const studentFiles: Record<string, string> = {};
 
-              try {
-                const zipContent = await mainZip.files[filename].async("blob");
-                const innerZip = new JSZip();
-                const studentZip = await innerZip.loadAsync(zipContent);
-                const studentFiles: Record<string, string> = {};
-
-                const innerPromises = Object.keys(studentZip.files).map(
-                  async (innerPath) => {
-                    if (!studentZip.files[innerPath].dir) {
-                      const ext = innerPath.split(".").pop()?.toLowerCase();
-                      if (
-                        [
-                          "txt",
-                          "md",
-                          "c",
-                          "cpp",
-                          "h",
-                          "hpp",
-                          "java",
-                          "py",
-                          "js",
-                          "ts",
-                          "json",
-                          "xml",
-                          "html",
-                          "css",
-                          "s",
-                          "asm",
-                        ].includes(ext || "")
-                      ) {
-                        const content =
-                          await studentZip.files[innerPath].async("string");
-                        studentFiles[innerPath] = content;
-                      }
-                    }
-                  },
-                );
-
-                await Promise.all(innerPromises);
-
-                submissionMap[studentId] = {
-                  studentId,
-                  studentName,
-                  studentCode,
-                  zipFilename: filename,
-                  rawZipBlob: zipContent,
-                  files: studentFiles,
-                };
-              } catch (innerErr) {
-                console.warn(
-                  `Failed to open inner zip for ${studentName}`,
-                  innerErr,
-                );
-              }
+              const innerPromises = Object.keys(studentZip.files).map(async (innerPath) => {
+                if (!studentZip.files[innerPath].dir) {
+                  const ext = innerPath.split('.').pop()?.toLowerCase();
+                  if (['txt', 'md', 'c', 'cpp', 'h', 'hpp', 'java', 'py', 'js', 'ts', 'json', 'xml', 'html', 'css', 's', 'asm'].includes(ext || '')) {
+                     const content = await studentZip.files[innerPath].async("string");
+                     studentFiles[innerPath] = content;
+                  }
+                }
+              });
+              
+              await Promise.all(innerPromises);
+              
+              submissionMap[studentId] = { 
+                studentId, 
+                studentName,
+                studentCode,
+                zipFilename: filename, 
+                rawZipBlob: zipContent, 
+                files: studentFiles 
+              };
+            } catch (innerErr) {
+              console.warn(`Failed to open inner zip for ${studentName}`, innerErr);
             }
-          },
-        );
+          }
+        });
 
         await Promise.all(filePromises);
-
+        
         // OVERWRITE STATE & STORAGE
         setSubmissions(submissionMap);
         setStatusMsg("Saving to local database...");
@@ -227,9 +176,7 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      setError(
-        `Error processing file: ${err instanceof Error ? err.message : "Unknown error"}`,
-      );
+      setError(`Error processing file: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setIsLoading(false);
       setTimeout(() => setStatusMsg(""), 2000); // Clear status after 2s
@@ -238,14 +185,11 @@ const App: React.FC = () => {
   };
 
   const studentList = useMemo(() => {
-    return Object.values(submissions)
-      .filter(
-        (s) =>
-          s.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.studentId.includes(searchTerm) ||
-          s.studentCode.includes(searchTerm),
-      )
-      .sort((a, b) => a.studentName.localeCompare(b.studentName));
+    return Object.values(submissions).filter(s => 
+      s.studentName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      s.studentId.includes(searchTerm) ||
+      s.studentCode.includes(searchTerm)
+    ).sort((a, b) => a.studentName.localeCompare(b.studentName));
   }, [submissions, searchTerm]);
 
   const currentSubmission = selectedId ? submissions[selectedId] : null;
@@ -259,22 +203,16 @@ const App: React.FC = () => {
             <Code className="text-white w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight">
-              Grading Workspace
-            </h1>
-            {statusMsg && (
-              <p className="text-[10px] text-blue-600 font-medium animate-pulse">
-                {statusMsg}
-              </p>
-            )}
+            <h1 className="text-lg font-bold text-slate-800 tracking-tight">Grading Workspace</h1>
+            {statusMsg && <p className="text-[10px] text-blue-600 font-medium animate-pulse">{statusMsg}</p>}
           </div>
         </div>
 
         <div className="flex gap-3">
-          <button
-            onClick={handleClearStorage}
-            className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-md text-xs font-bold hover:bg-red-100 transition-colors"
-            title="Clear all saved data"
+          <button 
+             onClick={handleClearStorage}
+             className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-md text-xs font-bold hover:bg-red-100 transition-colors"
+             title="Clear all saved data"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear Data
@@ -283,27 +221,12 @@ const App: React.FC = () => {
           <label className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-md text-xs font-medium cursor-pointer hover:bg-slate-50 transition-all shadow-sm">
             <PlusCircle className="w-4 h-4 text-orange-500" />
             <span>Load References</span>
-            <input
-              type="file"
-              className="hidden"
-              multiple
-              onChange={(e) => handleFileUpload(e, "ref")}
-            />
+            <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, "ref")} />
           </label>
           <label className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-md text-xs font-medium cursor-pointer hover:bg-slate-800 transition-all shadow-sm">
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileArchive className="w-4 h-4" />
-            )}
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileArchive className="w-4 h-4" />}
             <span>Load Submissions (ZIP)</span>
-            <input
-              type="file"
-              className="hidden"
-              accept=".zip"
-              onChange={(e) => handleFileUpload(e, "zip")}
-              disabled={isLoading}
-            />
+            <input type="file" className="hidden" accept=".zip" onChange={(e) => handleFileUpload(e, "zip")} disabled={isLoading} />
           </label>
         </div>
       </header>
@@ -327,16 +250,12 @@ const App: React.FC = () => {
                 {studentList.length} Students
               </span>
               <span className="text-[9px] font-medium text-slate-300 flex items-center gap-1">
-                {submissions && Object.keys(submissions).length > 0 ? (
-                  <Save className="w-3 h-3" />
-                ) : null}
-                {submissions && Object.keys(submissions).length > 0
-                  ? "Saved locally"
-                  : "No data"}
+                {submissions && Object.keys(submissions).length > 0 ? <Save className="w-3 h-3" /> : null}
+                {submissions && Object.keys(submissions).length > 0 ? "Saved locally" : "No data"}
               </span>
             </div>
           </div>
-
+          
           <div className="flex-1 overflow-y-auto">
             {error && (
               <div className="p-3 m-2 bg-red-50 border border-red-100 rounded text-xs text-red-600 flex gap-2">
@@ -344,35 +263,28 @@ const App: React.FC = () => {
                 {error}
               </div>
             )}
-
+            
             {studentList.length === 0 && !isLoading ? (
               <div className="p-8 text-center text-slate-400 text-xs">
-                {searchTerm
-                  ? "No matches found."
-                  : "No students found. Load a ZIP file to begin."}
+                {searchTerm ? "No matches found." : "No students found. Load a ZIP file to begin."}
               </div>
             ) : (
               <ul className="divide-y divide-slate-50">
                 {studentList.map((s) => (
                   <li key={s.studentId}>
                     <button
-                      onClick={() => {
-                        setSelectedId(s.studentId);
-                        setSelectedSubmissionFilePath(null);
-                      }}
+                      onClick={() => { setSelectedId(s.studentId); setSelectedSubmissionFilePath(null); }}
                       className={`w-full text-left px-5 py-3 hover:bg-slate-50 transition-all border-l-4 group ${
-                        selectedId === s.studentId
-                          ? "bg-blue-50 border-l-blue-600"
+                        selectedId === s.studentId 
+                          ? "bg-blue-50 border-l-blue-600" 
                           : "border-l-transparent"
                       }`}
                     >
-                      <div
-                        className={`text-sm font-bold flex items-center gap-2 ${selectedId === s.studentId ? "text-blue-700" : "text-slate-700"}`}
-                      >
+                      <div className={`text-sm font-bold flex items-center gap-2 ${selectedId === s.studentId ? "text-blue-700" : "text-slate-700"}`}>
                         <User className="w-3.5 h-3.5 opacity-50" />
                         {s.studentName}
                       </div>
-
+                      
                       <div className="flex items-center gap-3 mt-1.5">
                         <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
                           <Hash className="w-2.5 h-2.5" />
@@ -398,12 +310,11 @@ const App: React.FC = () => {
           {!selectedId ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none">
               <Code className="w-16 h-16 mb-4 opacity-50" />
-              <p className="text-sm font-medium uppercase tracking-widest">
-                Select a student to start grading
-              </p>
+              <p className="text-sm font-medium uppercase tracking-widest">Select a student to start grading</p>
             </div>
           ) : (
             <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+              
               {/* Left Pane: Student Submission */}
               <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="bg-slate-50 border-b px-4 py-2 flex justify-between items-center">
@@ -413,21 +324,19 @@ const App: React.FC = () => {
                       Student Submission
                     </span>
                     <span className="text-[10px] font-mono text-slate-400 mt-0.5">
-                      {currentSubmission?.studentCode}
+                       {currentSubmission?.studentCode}
                     </span>
                   </div>
-                  <span className="text-[9px] font-mono text-slate-300 truncate max-w-[150px]">
-                    {currentSubmission?.zipFilename}
-                  </span>
+                  <span className="text-[9px] font-mono text-slate-300 truncate max-w-[150px]">{currentSubmission?.zipFilename}</span>
                 </div>
-
+                
                 <div className="flex-1 flex overflow-hidden">
                   <div className="w-48 shrink-0 border-r bg-slate-50/50">
-                    <FileTree
-                      title="Files"
-                      files={Object.keys(currentSubmission?.files || {})}
-                      selectedFile={selectedSubmissionFilePath}
-                      onSelectFile={setSelectedSubmissionFilePath}
+                    <FileTree 
+                      title="Files" 
+                      files={Object.keys(currentSubmission?.files || {})} 
+                      selectedFile={selectedSubmissionFilePath} 
+                      onSelectFile={setSelectedSubmissionFilePath} 
                     />
                   </div>
                   <div className="flex-1 overflow-auto bg-white p-0">
@@ -455,15 +364,15 @@ const App: React.FC = () => {
 
                 <div className="flex-1 flex overflow-hidden">
                   <div className="w-48 shrink-0 border-r bg-slate-50/50">
-                    <FileTree
-                      title="References"
-                      files={Object.keys(referenceFiles)}
-                      selectedFile={selectedReferenceFilePath}
-                      onSelectFile={setSelectedReferenceFilePath}
+                     <FileTree 
+                      title="References" 
+                      files={Object.keys(referenceFiles)} 
+                      selectedFile={selectedReferenceFilePath} 
+                      onSelectFile={setSelectedReferenceFilePath} 
                     />
                   </div>
                   <div className="flex-1 overflow-auto bg-[#fffaf5] p-0">
-                    {selectedReferenceFilePath ? (
+                     {selectedReferenceFilePath ? (
                       <pre className="p-4 text-xs font-mono leading-relaxed text-slate-800 whitespace-pre tab-4">
                         {referenceFiles[selectedReferenceFilePath]}
                       </pre>
@@ -475,6 +384,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+
             </div>
           )}
         </section>
